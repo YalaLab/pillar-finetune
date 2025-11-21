@@ -1,5 +1,5 @@
 # Download models from huggingface
-hf download YalaLab/NLST-FT-Atlas-unimodal-lr1e-5-ep14-detr-sybil --local-dir logs/checkpoints 
+hf download YalaLab/Pillar0-Sybil-1.5 --local-dir logs/checkpoints 
 
 # Configuration
 CONFIG_FILE="${1:-configs/csv_dataset_setup.yaml}"
