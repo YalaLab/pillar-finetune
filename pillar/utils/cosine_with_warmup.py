@@ -27,8 +27,8 @@ class CosineAnnealingWarmup(LRScheduler):
             ]
         else:
             return [
-                self.min_lr
-                + (base_lr - self.min_lr)
+                self.min_lr * group["lr_scale"]
+                + (base_lr - self.min_lr * group["lr_scale"])
                 * 0.5
                 * (
                     1.0

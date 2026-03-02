@@ -13,7 +13,7 @@ import json
 from pillar.utils.logging import logger
 
 
-def param_groups_lrd(model, base_lr, weight_decay=0.05, no_weight_decay_list=[], layer_decay=0.75):
+def param_groups_lrd(model, weight_decay=0.05, no_weight_decay_list=[], layer_decay=0.75):
     """
     Parameter groups for layer-wise lr decay
     Following BEiT: https://github.com/microsoft/unilm/blob/master/beit/optim_factory.py#L58
@@ -45,12 +45,12 @@ def param_groups_lrd(model, base_lr, weight_decay=0.05, no_weight_decay_list=[],
             this_scale = layer_scales[layer_id]
 
             param_group_names[group_name] = {
-                "lr": base_lr * this_scale,
+                "lr_scale": this_scale,
                 "weight_decay": this_decay,
                 "params": [],
             }
             param_groups[group_name] = {
-                "lr": base_lr * this_scale,
+                "lr_scale": this_scale,
                 "weight_decay": this_decay,
                 "params": [],
             }

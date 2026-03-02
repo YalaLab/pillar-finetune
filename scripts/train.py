@@ -303,12 +303,13 @@ def build_optimizer(args, model):
 
         param_groups = param_groups_lrd(
             model,
-            base_lr=base_lr,
             weight_decay=weight_decay,
             no_weight_decay_list=no_weight_decay_list,
             layer_decay=args.optimizer.layer_decay,
         )
 
+        for group in param_groups:
+            group["lr"] = base_lr * group["lr_scale"]
         # Remove lr and weight_decay from kwargs since they're in param_groups
         optimizer_kwargs_filtered = {k: v for k, v in optimizer_kwargs.items() if k not in ["lr", "weight_decay"]}
         optimizer = getattr(torch.optim, optimizer_type)(param_groups, **optimizer_kwargs_filtered)
