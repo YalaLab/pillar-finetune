@@ -144,10 +144,10 @@ class Classifier(Engine):
             end = time.time()
 
             if batch_idx % log_interval == 0:
-                if get_is_master():
+                if get_is_master() and not self.args.main.disable_wandb:
                     wandb.log({"train/loss": loss.detach(), "lr": lr_value}, step=self.global_step)
                 progress.display(batch_idx + 1, tqdm_write=True)
-                if log_loss_components == True and get_is_master():
+                if log_loss_components == True and get_is_master() and not self.args.main.disable_wandb:
                     for k, v in logging_dict.items():
                         wandb.log({k: v}, step=self.global_step)
 
