@@ -110,6 +110,9 @@ model:
       pretrained: True
       model_repo_id: YalaLab/Pillar0-ChestCT
       model_revision: main
+      # "legacy" reproduces the released Pillar0-Sybil-1.5 checkpoints; "spatial" keeps
+      # every token in its input position (see tokens_to_grid in mmatlas.py)
+      readout_layout: legacy
 
     head_models:
       survival:

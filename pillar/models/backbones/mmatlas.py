@@ -86,6 +86,58 @@ def get_config_value(config: Dict[str, Any], key: str, default: Any = None) -> A
     return value
 
 
+READOUT_LAYOUTS = ("legacy", "spatial")
+
+
+def tokens_to_grid(feats_for_head, multiscale_layout, res, readout_layout="legacy"):
+    """
+    Arrange each scale's tokens on a 3D grid, resize every scale to `res` and
+    concatenate them along channels (the "activ" output).
+
+    Atlas windows the patch-embedded volume (B, C, A0, A1, A2) as
+    "b c (g0 m0) (g1 m1) (g2 m2) -> (b g0 g1 g2) (m0 m1 m2) c", so after
+    "(b nw) k c -> b (nw k) c" the token index is ordered (g0 g1 g2 m0 m1 m2),
+    with (g0, g1, g2) = layout["grid_size"] and (m0, m1, m2) = layout["window_dims"].
+
+    "spatial" inverts that exactly: activ[..., i, j, k] is the token at
+    position (i, j, k) of the input axes (A0, A1, A2), and every fine-scale
+    token is kept.
+
+    "legacy" is the readout Pillar0-Sybil-1.5 was trained with. It unpacks the
+    index as (g2 g0 g1 m2 m0 m1), which is not the order the tokens were written
+    in, and resizes the resulting grid with nearest interpolation. For a
+    256^3 chest CT, half of the fine-scale tokens never reach activ (only even
+    planes of A0 survive) and each output plane mixes halves of different
+    input planes. Keep it to reproduce the released checkpoints.
+
+    Args:
+        feats_for_head: list of (B, N, C) tensors, one per scale
+        multiscale_layout: output of prepare_multiscale_layout
+        res: finest token grid, [image_size[i] // patch_size[i] for i in range(3)]
+        readout_layout: "legacy" or "spatial"
+
+    Returns:
+        (B, sum(C), *res) tensor
+    """
+    if readout_layout not in READOUT_LAYOUTS:
+        raise ValueError(f"readout_layout must be one of {READOUT_LAYOUTS}, got {readout_layout!r}")
+    if readout_layout == "spatial":
+        pattern = "b (g0 g1 g2 m0 m1 m2) c -> b c (g0 m0) (g1 m1) (g2 m2)"
+    else:
+        pattern = "b (g2 g0 g1 m2 m0 m1) c -> b c (g2 m2) (g0 m0) (g1 m1)"
+
+    outs = []
+    for layout, scale in zip(multiscale_layout, feats_for_head):
+        m0, m1, m2 = layout["window_dims"]
+        g0, g1, g2 = layout["grid_size"]
+        scale = rearrange(scale, pattern, g0=g0, g1=g1, g2=g2, m0=m0, m1=m1, m2=m2)
+        # interpolate to the same size
+        scale = nn.functional.interpolate(scale, size=res, mode="nearest")
+        outs.append(scale)
+
+    return torch.cat(outs, dim=1)
+
+
 class MultimodalAtlas(nn.Module):
     """Multimodal Atlas medical image analysis."""
 
@@ -96,9 +148,13 @@ class MultimodalAtlas(nn.Module):
         model_repo_id=None,
         model_revision=None,
         pretrained=False,
+        readout_layout="legacy",
     ):
         super().__init__()
+        if readout_layout not in READOUT_LAYOUTS:
+            raise ValueError(f"readout_layout must be one of {READOUT_LAYOUTS}, got {readout_layout!r}")
         self.args = args
+        self.readout_layout = readout_layout
 
         # Load model-specific config and setup device
         self.device = setup_device(device)
@@ -274,28 +330,7 @@ class MultimodalAtlas(nn.Module):
         import torch.nn.functional as F
 
         res = [image_size[i] // patch_size[i] for i in range(3)]
-        outs = []
-
-        for idx in range(len(multiscale_layout)):
-            layout = multiscale_layout[idx]
-            scale = feats_for_head[idx]
-            m0, m1, m2 = layout["window_dims"]
-            g0, g1, g2 = layout["grid_size"]
-            scale = rearrange(
-                scale,
-                "b (g2 g0 g1 m2 m0 m1) c -> b c (g2 m2) (g0 m0) (g1 m1)",
-                g2=g2,
-                g1=g1,
-                g0=g0,
-                m2=m2,
-                m1=m1,
-                m0=m0,
-            )
-            # interpolate to the same size
-            scale = nn.functional.interpolate(scale, size=res, mode="nearest")
-            outs.append(scale)
-
-        outs = torch.cat(outs, dim=1)
+        outs = tokens_to_grid(feats_for_head, multiscale_layout, res, self.readout_layout)
 
         outputs = {
             "activ": outs,
